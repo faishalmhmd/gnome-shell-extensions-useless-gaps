@@ -58,6 +58,10 @@ export default class UselessGapsExtension extends Extension {
       window.unmaximize(Meta.MaximizeFlags.BOTH);
       window.move_resize_frame(false, xStart, yStart, newWidth, newHeight);
     }
+    else if (window.is_fullscreen()){
+      window.unmake_fullscreen();
+      window.move_resize_frame(false, xStart, yStart, newWidth, newHeight);
+    }
   }
 
   addSplitWindowMargins(window){
@@ -79,10 +83,41 @@ export default class UselessGapsExtension extends Extension {
       xStart = rects.window.x + rects.window.w - this.marginRight - this.gapSize - newWidth;
     }
 
-    window.unmaximize(Meta.MaximizeFlags.BOTH);
+    if (window.get_maximized() === Meta.MaximizeFlags.BOTH || window.is_fullscreen()) {
+      if (window.is_fullscreen()) {
+        window.unmake_fullscreen();
+      } else {
+        window.unmaximize(Meta.MaximizeFlags.BOTH);
+      }
+    }
     window.move_resize_frame(false, xStart, yStart, newWidth, newHeight);
   }
 
+
+  window_created(display, win)
+  {
+    if (win.window_type !== Meta.WindowType.NORMAL)
+      return;
+
+    // Apply gaps to maximized windows when they're created
+    if (win.get_maximized() === Meta.MaximizeFlags.BOTH && !this.noGapsForMaximizedWindows) {
+      // Use a small delay to ensure the window is fully initialized
+      setTimeout(() => {
+        this.addWindowMargins(win);
+      }, 100);
+    }
+    else if (win.get_maximized() === Meta.MaximizeFlags.VERTICAL) {
+      setTimeout(() => {
+        this.addSplitWindowMargins(win);
+      }, 100);
+    }
+    // Apply gaps to fullscreen windows when they're created
+    else if (win.is_fullscreen() && !this.noGapsForMaximizedWindows) {
+      setTimeout(() => {
+        this.addWindowMargins(win);
+      }, 100);
+    }
+  }
 
   window_manager_size_change(act, change, rectold)
   {
@@ -101,6 +136,13 @@ export default class UselessGapsExtension extends Extension {
       else if(win.get_maximized() === Meta.MaximizeFlags.VERTICAL){
         _windowids_size_change[win.get_id()]="gapvert";
 
+      }
+    }
+    else if (change === Meta.SizeChange.FULLSCREEN)
+    {
+      if (win.is_fullscreen() && !this.noGapsForMaximizedWindows)
+      {
+        _windowids_size_change[win.get_id()]="gapmax";
       }
     }
   }
@@ -141,11 +183,15 @@ export default class UselessGapsExtension extends Extension {
 
     _handles.push(global.window_manager.connect('size-changed', (_, act) => {this.window_manager_size_changed(act);}));
     _handles.push(global.window_manager.connect('size-change', (_, act, change,rectold) => {this.window_manager_size_change(act,change,rectold);}));
+    _handles.push(global.display.connect('window-created', (_, win) => {this.window_created(_, win);}));
   }
 
   disable() {
     this._settings = null;
-    _handles.splice(0).forEach(h => global.window_manager.disconnect(h));
+    _handles.splice(0).forEach(h => {
+      global.window_manager.disconnect(h);
+      global.display.disconnect(h);
+    });
   }
 }
 
